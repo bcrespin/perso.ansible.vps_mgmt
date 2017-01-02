@@ -1,0 +1,34 @@
+---
+acme_client_url: https://github.com/kristapsdz/acme-client/archive/
+acme_client_version: VERSION_0_1_15
+openbsd_httpd_config_letsencrypt_only: |
+  # ansible managed, do not edit by hand!
+  #########################################
+  server "default" {
+    listen on * port 80
+    location "/.well-known/acme-challenge/*" {
+      root "/acme"
+      root strip 2
+    }
+  }
+common_users:
+  brice_openbsd:
+    name: brice
+    comment: myself
+    password: $2b$10$3Aq8hGQCSi6fIrLtHWiwuO0isqr2fh51t/7ayx2SpJnf/E7dwVVym
+    groups: wheel
+  vickie_openbsd:
+    name: vickie
+    comment: sexyletatou
+    password: $2b$10$eN0/CuCRFJPU6UFmvEYoquLS9Z0ELbWzXUyV9lTtg4H6CGLQFpRGu
+    groups: ''
+  brice_apr1_user:
+    name: brice
+    password: $apr1$aB7BAd6$dhe6EqKlRZU7iQo.r.5dC1
+  vickie_apr1_user:
+    name: vickie
+    password: $apr1$vbkcWB25$CSZ2VrcFUCwaQORqltmwT/
+  openvpn_home:
+    name: home2vps
+    password: $apr1$iel7TETL$vxzIE2ODxC5kfjETRlpRP.
+

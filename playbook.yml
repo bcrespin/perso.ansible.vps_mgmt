@@ -1,0 +1,161 @@
+- name: vps base config
+  hosts: boxemanvps1
+  become: true
+  gather_facts: true
+  roles:
+    - ansible_motd
+    - ansible-resolv
+    - boxeman.pkg_config
+    - ansible_sshd
+
+  tasks:
+    - name: install required package (OpenBSD)
+      openbsd_pkg: name={{ item }} state=present
+      with_items: "{{  package_list|default('') }}"
+      when: item != ''
+      tags: [ 'common', 'package' ]
+
+    - name: generate pf.conf file
+      copy: content="{{ pf_file_content }}" dest=/etc/pf.conf mode=0600 owner=root group=wheel
+      when: pf_file_content is defined
+      register: result
+      tags: [ 'common' ,'pf' ]
+
+    - name: reload pf service
+      command: sh -c "/sbin/pfctl -n -f /etc/pf.conf && /sbin/pfctl -f /etc/pf.conf"
+      when: result.changed 
+      tags: [ 'common' ,'pf' ]
+
+    - name: start ftpproxy service
+      service: name=ftpproxy state=started enabled=yes
+      tags: [ 'common' , 'pf' ]
+
+    - name: enable ip forwarding
+      sysctl:
+        name: "{{ ip_forward_sysctl_value }}"
+        value: 1
+        sysctl_set: yes
+      when: "{{ip_forward_enable|default(false) }}" 
+      tags: [ 'common' , 'pf' ]
+
+    - name: add users
+      user: name={{ item.value.name }} comment={{ item.value.comment }} groups={{ item.value.groups }}  append=yes password={{ item.value.password }} createhome=yes
+      with_dict: "{{ my_users|default({}) }}"
+      tags: [ 'common' ,'users' ]
+
+    - name: ensure sudo is allowed for wheel group
+      lineinfile: " dest=/etc/sudoers state=present regexp='^%wheel' line='%wheel ALL=(ALL) SETENV: ALL' validate='visudo -cf %s' "
+      tags: [ 'common' ,'users' ]
+
+    - meta: flush_handlers
+      tags: [ 'common', 'users' ,'pf', 'package' ]
+
+- name: vps additional config
+  hosts: boxemanvps1
+  become: true
+  gather_facts: true
+  roles:
+    - { role: boxeman.openvpn , openvpn_instance: "{{ openvpn_instance_home}}" , openvpn_instance_name: home }
+    - { role: boxeman.openvpn , openvpn_instance: "{{ openvpn_instance_warrior}}" , openvpn_instance_name: warrior }
+  tasks:
+    - name: fetch vps1 openvpn home client file
+      fetch: src=/etc/openvpn_home/{{ item }}  dest=fetched/openvpn_home_{{ inventory_hostname }}/{{ item }} flat=yes
+      with_items: [ 'client-template.ovpn' ,'keys/ta.key', 'keys/ca.crt','keys/dh2048.pem','keys/issued/home2vps.crt','keys/private/home2vps.key' ]
+      tags: [ 'openvpn' ]
+
+    - name: fetch openvpn home startup script
+      fetch: src=/etc/rc.d/openvpn_home dest=fetched/openvpn_home_{{ inventory_hostname }}/rc_script_openvpn_home flat=yes
+      tags: [ 'openvpn' ]
+
+    - name: fetch vps1 openvpn warrior client file
+      fetch: src=/etc/openvpn_warrior/{{ item }}  dest=fetched/openvpn_warrior_{{ inventory_hostname }}/{{ item }} flat=yes
+      with_items: [ 'client-template.ovpn' ,'keys/ta.key', 'keys/ca.crt','keys/dh2048.pem','keys/issued/brice.crt','keys/private/brice.key','keys/issued/vickie.crt', 'keys/private/vickie.key' ]
+      tags: [ 'openvpn' ]
+
+    - name: temporary selmade authfile openvpn_warrior
+      lineinfile: " dest=/etc/openvpn_warrior/auth_file regexp='{{ item.name }}' line='{{ item.name }}:{{ item.password }}' create=yes"
+      with_items:
+        - "{{ common_users.brice_apr1_user }}"
+        - "{{ common_users.vickie_apr1_user }}"
+      tags: [ 'openvpn' , 'openvpn_auth_file' ]
+
+    - name: temporary selmade authfile openvpn_home
+      lineinfile: " dest=/etc/openvpn_home/auth_file regexp='{{ item.name }}' line='{{ item.name }}:{{ item.password }}' create=yes"
+      with_items:
+        - "{{ common_users.openvpn_home }}"
+      tags: [ 'openvpn' , 'openvpn_auth_file' ]
+
+    - name: restricted httpd to register first time letsencrypt cert
+      copy: content={{ openbsd_httpd_config_letsencrypt_only }} dest=/etc/http_letsencrypt_only.conf owner=root group=wheel mode=0755
+      tags: [ 'letsencrypt' ]
+
+    - name: prepare acme folders
+      file: name={{ item.folder }} owner=root group=wheel mode={{ item.mode }} state=directory
+      with_items:
+        - { folder: '/etc/acme' , mode: '0700' }
+        - { folder: '/etc/ssl/acme' , mode: '0700' } 
+        - { folder: '/etc/ssl/acme/private' , mode:  '0700' }
+        - { folder: '/var/www/htdocs/acme' , mode: '0755' }
+      tags: [ 'letsencrypt' ]
+    
+    - name: download and build and install acme-client
+      shell: ftp '{{ acme_client_url }}/{{ acme_client_version }}.zip' && unzip {{ acme_client_version }}.zip &&  cd acme-client-{{ acme_client_version }} && make && make install
+      args:  
+        chdir: /root
+        creates: /root/acme-client-{{ acme_client_version }}
+      tags: [ 'letsencrypt' ]
+
+    - name: initial run of letsencrypt / acme
+      shell: httpd -f /etc/http_letsencrypt_only.conf && /usr/local/bin/acme-client -Nn -C /var/www/htdocs/acme -c /etc/ssl/acme -k /etc/ssl/acme/private/privkey.pem -f /etc/acme/privkey.pem {{ ssl_register_domain_name }} &&  pkill httpd
+      args:
+        creates: /etc/ssl/acme/private/privkey.pem
+      when: ssl_register_domain_name is defined
+      tags: [ 'letsencrypt' ]
+
+    - name: https root directory
+      file: name=/var/www/vps.boxeman.xyz owner=root group=wheel state=directory mode=0755 
+      tags: [ 'httpd' ]
+
+    - name: Gathering info
+      action: setup
+      tags: [ 'httpd' ]
+
+    - name: nginx authfile
+      lineinfile: " dest=/var/www/{{ ansible_host}}/service/.htpasswd regexp='{{ item.name }}' line='{{ item.name }}:{{ item.password }}' create=yes  owner=root group=wheel "
+      with_items:
+        - "{{ common_users.brice_apr1_user }}"
+        - "{{ common_users.vickie_apr1_user }}"
+ 
+      tags: [ 'httpd' ]
+
+    - name: generate nginx self signed cert for default use
+      command: "{{ item }}"
+      args:
+        creates: /etc/ssl/nginx_default_ssl.crt 
+      with_items:
+        - "openssl genrsa -out /etc/ssl/private/nginx_default_ssl.key"
+        - "openssl req -new -key /etc/ssl/private/nginx_default_ssl.key -out /etc/ssl/private/nginx_default_ssl.csr -subj '/C=RU/ST=/L=StPetersburg/O=/CN={{ ansible_default_ipv4.address }}' "
+        - "openssl x509 -sha256 -req -days 3650 -in /etc/ssl/private/nginx_default_ssl.csr  -signkey /etc/ssl/private/nginx_default_ssl.key  -out /etc/ssl/nginx_default_ssl.crt"
+      tags: [ 'httpd' ]
+
+    - name: generate DHE key for nginx
+      command: "openssl dhparam -out /etc/ssl/nginx_dhparam.pem 2048"
+      args:
+        creates: /etc/ssl/nginx_dhparam.pem
+      tags: [ 'httpd' ]
+
+    - name: generate nginx config
+      copy: content={{ nginx_config }} dest=/etc/nginx/nginx.conf owner=root group=wheel mode=0755
+      tags: [ 'httpd' ]
+      register: result
+
+    - name: reload nginx 
+      service: name=nginx state=reloaded enabled=yes
+      when: result.changed
+      register: result
+      tags: [ 'httpd' ]
+
+    - name: start nginx
+      service: name=nginx state=started enabled=yes
+      when: ! result.changed
+      tags: [ 'httpd' ]
