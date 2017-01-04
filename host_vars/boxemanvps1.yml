@@ -1,13 +1,6 @@
 ---
 ssl_register_domain_name: "{{ ansible_host }}"
 
-test_car: |
-  #######
-  # I fuck you 
-  test1 line
-  {{ ansible_host }}
-  test3 line
-
 my_users:
   brice: "{{ common_users.brice_openbsd }}"
   vickie: "{{ common_users.vickie_openbsd }}"
@@ -27,6 +20,9 @@ package_list: ['sudo--', 'unzip--','nginx--']
 
 pkg_config_openbsd_mtier_enable: true
 
+nfs_exports: |
+  /var/transmission/Downloads -ro -network=127.0.0.0 -mask=255.0.0.0
+
 pf_file_content: |
   # ansible managed, do not edit by hand !
   ##########################################
@@ -38,12 +34,11 @@ pf_file_content: |
   vpn_warrior="tun1"
   table <internet-dns> { 8.8.8.8, 8.8.4.4 }
   table <lan_openvpn_home_site> { 172.31.1.20, 172.31.5.100 }
-  table <lan_openvpn_warrior> { 192.168.255.16/28 }
   table <bruteforce> persist
   #  p2p_redirect_ports_host1= "{ 80 , 443 }"
   #  p2p_redirect_ports_host1= "{ 80 , 443 }"
   #p2p_host1= "172.31.1.20"
-  openvpn_server_ports= "{ 51193, 51194 }"
+  openvpn_server_ports= "{ {{ openvpn_instance_warrior_port }} , {{ openvpn_instance_home_port }}  }"
   p2p_ports_localhost= "{ 55413 }"
   ssh_port_localhost= 65522
   http_ports_localhost= "{ 80,443 }"
@@ -76,7 +71,7 @@ pf_file_content: |
   pass in quick on $vpn_home inet proto tcp from <lan_openvpn_home_site> to ! self port 21 divert-to 127.0.0.1 port 8021
   pass in quick on $vpn_warrior inet proto tcp from <lan_openvpn_warrior> to ! self port 21 divert-to 127.0.0.1 port 8021
   pass quick on $vpn_home from <lan_openvpn_home_site> to any tag FROM_VPN
-  pass quick on $vpn_warrior from <lan_openvpn_warrior> to any tag FROM_VPN
+  pass quick on $vpn_warrior from {{ lan_openvpn_instance_warrior_pf }} to any tag FROM_VPN
 
   pass in quick on $main proto tcp from any to $main:0 port $ssh_port_localhost  flags S/SA keep state (max-src-conn 6, max-src-conn-rate 6/60,overload <bruteforce> flush global) 
   
@@ -98,9 +93,9 @@ openvpn_instance_home:
   openvpn_host: '{{ ansible_host }}'
   openvpn_dev: tun0
   openvpn_topology: subnet
-  openvpn_port: 51193
+  openvpn_port: '{{ openvpn_instance_home_port }}'
   openvpn_max_clients: 4
-  openvpn_server: 192.168.255.0 255.255.255.240
+  openvpn_server: '{{ lan_openvpn_instance_home_openvpn }}'
   openvpn_use_certs: yes
   openvpn_clients_certs: [ 'home2vps' ]
   openvpn_check_username_in_cert: yes
@@ -118,9 +113,9 @@ openvpn_instance_warrior:
   openvpn_host: '{{ ansible_host }}'
   openvpn_dev: tun1
   openvpn_topology: subnet
-  openvpn_port: 51194
+  openvpn_port: '{{ openvpn_instance_warrior_port }}'
   openvpn_max_clients: 10
-  openvpn_server: 192.168.255.16 255.255.255.240
+  openvpn_server: '{{ lan_openvpn_instance_warrior_openvpn }}'
   openvpn_clients_certs: [ 'brice', 'vickie' ]
   openvpn_use_certs: yes
   openvpn_check_username_in_cert: yes
@@ -211,14 +206,7 @@ nginx_config: |
       location /service/transmission-download/ {
         auth_basic "Restricted";
         auth_basic_user_file /var/www/{{ ansible_host}}/service/.htpasswd;
-        location ~ \.php$ {
-            try_files $uri =404;
-            fastcgi_split_path_info ^(.+\.php)(/.+)$;
-            fastcgi_pass   127.0.0.1:9001;
-            fastcgi_index index.php;
-            fastcgi_param  SCRIPT_FILENAME /var/transmission$fastcgi_script_name;
-            include fastcgi_params;
-        }
+        autoindex on;
       }
 
       location /service/ {

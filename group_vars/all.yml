@@ -11,6 +11,14 @@ openbsd_httpd_config_letsencrypt_only: |
       root strip 2
     }
   }
+
+openvpn_instance_warrior_port: 51194
+openvpn_instance_home_port: 51193
+lan_openvpn_instance_home_openvpn: '192.168.255.0 255.255.255.240'
+lan_openvpn_instance_home_pf: '192.168.255.0/28'
+lan_openvpn_instance_warrior_openvpn: '192.168.255.16 255.255.255.240'
+lan_openvpn_instance_warrior_pf: '192.168.255.16/28'
+
 common_users:
   brice_openbsd:
     name: brice
