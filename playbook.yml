@@ -57,6 +57,7 @@
   roles:
     - { role: ansible.openvpn , openvpn_instance: "{{ openvpn_instance_home}}" , openvpn_instance_name: home }
     - { role: ansible.openvpn , openvpn_instance: "{{ openvpn_instance_warrior}}" , openvpn_instance_name: warrior }
+    - { role: ansible.transmission }
   tasks:
     - name: fetch vps1 openvpn home client file
       fetch: src=/etc/openvpn_home/{{ item }}  dest=fetched/openvpn_home_{{ inventory_hostname }}/{{ item }} flat=yes

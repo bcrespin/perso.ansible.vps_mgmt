@@ -20,6 +20,10 @@ package_list: ['sudo--', 'unzip--','nginx--']
 
 pkg_config_openbsd_mtier_enable: true
 
+transmission_rpc_white_list: "127.0.0.1,192.168.255.*"
+transmission_blocklist_url: "http://www.wael.name/wael.list.p2p.gz"
+transmission_blocklist_enabled: 'true'
+
 nfs_exports: |
   /var/transmission/Downloads -ro -network=127.0.0.0 -mask=255.0.0.0
 
