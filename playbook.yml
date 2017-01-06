@@ -162,6 +162,21 @@
       when: ! result.changed
       tags: [ 'httpd' ]
 
+    - name: newsyslog.conf config
+      lineinfile:
+        dest: /etc/newsyslog.conf 
+        create: yes 
+        line: '/var/www/logs/{{ item }} 		640	31	* 	$D0	Z " kill -s USR1 `cat /var/run/nginx.pid` "'  
+        regexp: '(^/var/www/logs/{{ item }}|^$)'
+      with_items: 
+        - "access.log"
+        - "error.log"
+        - "default_ssl_access.log "
+        - "default_ssl_error.log"
+        - "{{ ansible_host }}_ssl_access.log"
+        - "{{ ansible_host }}_ssl_error.log"
+      tags: [ 'httpd' ,'newsyslog']
+
     - name: configure nfs exports
       copy: content={{ nfs_exports }} dest=/etc/exports owner=root group=wheel mode=0644 
       register: result

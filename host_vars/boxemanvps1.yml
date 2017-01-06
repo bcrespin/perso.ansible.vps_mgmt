@@ -95,6 +95,7 @@ pf_file_content: |
 
 openvpn_instance_home:
   openvpn_host: '{{ ansible_host }}'
+  openvpn_auth: 'SHA512'
   openvpn_dev: tun0
   openvpn_topology: subnet
   openvpn_port: '{{ openvpn_instance_home_port }}'
@@ -114,6 +115,7 @@ openvpn_instance_home:
        iroute 172.31.5.100 255.255.255.255
 
 openvpn_instance_warrior:
+  openvpn_auth: 'SHA512'
   openvpn_host: '{{ ansible_host }}'
   openvpn_dev: tun1
   openvpn_topology: subnet
