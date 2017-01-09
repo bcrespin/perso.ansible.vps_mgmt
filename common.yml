@@ -1,0 +1,42 @@
+---
+- name: install required package (OpenBSD)
+  openbsd_pkg: name={{ item }} state=present
+  with_items: "{{  package_list|default('') }}"
+  when: item != ''
+  tags: [ 'package' ]
+
+- name: generate pf.conf file
+  copy: content="{{ pf_file_content }}" dest=/etc/pf.conf mode=0600 owner=root group=wheel
+#      when: pf_file_content is defined
+  register: result
+  tags: [ 'pf' ]
+
+- name: reload pf service
+  command: sh -c "/sbin/pfctl -n -f /etc/pf.conf && /sbin/pfctl -f /etc/pf.conf"
+  when: result.changed
+  tags: [ 'pf' ]
+
+- name: start ftpproxy service
+  service: name=ftpproxy state=started enabled=yes
+  tags: [ 'pf' ]
+
+- name: enable ip forwarding
+  sysctl:
+    name: "{{ ip_forward_sysctl_value }}"
+    value: 1
+    sysctl_set: yes
+  when: "{{ip_forward_enable|default(false) }}"
+  tags: [ 'pf' ]
+
+- name: add users
+  user: name={{ item.value.name }} comment={{ item.value.comment }} groups={{ item.value.groups }}  append=yes password={{ item.value.password }} createhome=yes
+  with_dict: "{{ my_users|default({}) }}"
+  tags: [ 'users' ]
+
+- name: ensure sudo is allowed for wheel group
+  lineinfile: " dest=/etc/sudoers state=present regexp='^%wheel' line='%wheel ALL=(ALL) SETENV: ALL' validate='visudo -cf %s' "
+  tags: [ 'users' ]
+
+- meta: flush_handlers
+  tags: [ 'users' ,'pf', 'package' ]
+
